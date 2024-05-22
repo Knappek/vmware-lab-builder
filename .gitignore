@@ -1,5 +1,4 @@
 .envrc
-temp/*
 settings.json
 tmp/
 ignored/

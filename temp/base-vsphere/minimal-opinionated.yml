@@ -1,0 +1,102 @@
+---
+# SOFTWARE_DIR must contain all required software
+vc_iso: "{{ lookup('env', 'SOFTWARE_DIR') }}/VMware-VCSA-all-8.0.2-23504390.iso"
+esxi_ova: "{{ lookup('env', 'SOFTWARE_DIR') }}/Nested_ESXi8.0u2b_Appliance_Template_v1.ova"
+
+environment_tag: "minimal"  # Used to prepend object names in hosting vCenter
+dns_server: "192.168.178.1"
+dns_domain: "home.local"
+ntp_server_ip: "192.168.178.1"  # Must be set to an IP address!
+disk_mode: thin  # How all disks should be deployed
+nested_host_password: "{{ opinionated.master_password }}"
+
+hosting_vcenter:  # This is the vCenter which will be the target for nested vCenters and ESXi hosts
+  ip: "192.168.178.102"
+  username: "{{ lookup('env', 'PARENT_VCENTER_USERNAME') }}"
+  password: "{{ lookup('env', 'PARENT_VCENTER_PASSWORD') }}"
+  datacenter: "Home"  # Target for all VM deployment
+
+# This section is only referenced by other variables in this file
+opinionated:
+  master_password: "VMware1!"
+  number_of_hosts: 1
+  nested_hosts:
+    cpu_cores: 12  # CPU count
+    ram_in_gb: 128  # memory
+    local_disks:
+      - size_gb: 500
+        datastore_prefix: "datastore"
+  hosting_cluster: Physical
+  hosting_datastore: NVME
+  hosting_network:
+    base:
+      port_group: TKGS-NSXT
+      cidr: "172.20.16.0/22"
+      gateway: "172.20.16.1"
+      # Minimal deployment requires 1 IPs, plus 1 per esxi host. They MUST be contiguous.
+      starting_addr: "172.20.16.10"
+    workload:
+      port_group: trunk
+      vlan_id: 24
+      # cidr: "172.20.24.0/24"
+      # gateway: "172.20.24.1"
+
+#####################################################################
+### No need to edit below this line for an opinionated deployment ###
+#####################################################################
+
+nested_vcenter:  # the vCenter appliance that will be deployed
+  ip: "{{ opinionated.hosting_network.base.starting_addr }}"  # vCenter ip address
+  mask: "{{ opinionated.hosting_network.base.cidr.split('/')[1] }}"
+  gw: "{{ opinionated.hosting_network.base.gateway }}"
+  host_name: "{{ opinionated.hosting_network.base.starting_addr }}"  # FQDN if there is working DNS server, otherwise put the ip as a name
+  username: "administrator@vsphere.local"
+  password: "{{ opinionated.master_password }}"
+  datacenter: "Lab"  # DC to create after deployment
+  # Below are properties of parent cluster
+  hosting_network: "{{ opinionated.hosting_network.base.port_group }}"  # Parent port group where the vCenter VM will be deployed
+  hosting_cluster: "{{ opinionated.hosting_cluster }}"  # Parent cluster where the vCenter VM will be deployed
+  hosting_datastore: "{{ opinionated.hosting_datastore }}"  # Parent datastore where the vCenter VM will be deployed
+
+nested_clusters:  # You can add clusters in this section by duplicating the existing cluster
+  compute:  # This will be the name of the cluster in the nested  vCenter. Below are the minimum settings.
+    # Below are properties of the hosting cluster
+    hosting_cluster: "{{ opinionated.hosting_cluster }}"  # The nested ESXi VMs will be deployed here
+    hosting_datastore: "{{ opinionated.hosting_datastore }}"  # Datastore target for nested ESXi VMs
+    # Settings below are assigned to each host in the cluster
+    cpu_cores: "{{ opinionated.nested_hosts.cpu_cores }}"  # CPU count
+    ram_in_gb: "{{ opinionated.nested_hosts.ram_in_gb }}"  # memory
+    # Added in vmnic order, these port groups must exist on the physical host
+    # Must specify at least 2 port groups, up to a maximum of 10
+    vmnic_physical_portgroup_assignment:
+      - name: "{{ opinionated.hosting_network.base.port_group }}"
+      - name: "{{ opinionated.hosting_network.workload.port_group }}"
+
+opinionated_host_ip_ofset: 1
+# You can add nested ESXi hosts below
+nested_hosts: >-
+  [
+    {% for host_number in range(opinionated.number_of_hosts) %}
+    {
+      "name": "esx{{ host_number + 1 }}",
+      "ip": "{{ opinionated.hosting_network.base.starting_addr | ansible.utils.ipmath(opinionated_host_ip_ofset + host_number) }}",
+      "mask": "{{ opinionated.hosting_network.base.cidr | ansible.utils.ipaddr('netmask') }}",
+      "gw": "{{ opinionated.hosting_network.base.gateway }}",
+      "nested_cluster": "compute"
+
+    },
+    {% endfor %}
+  ]
+
+distributed_switches:  # To not create any distributed switches, comment this section.
+  - vds_name: vds
+    mtu: 1500
+    vds_version: 7.0.0
+    clusters:  # distributed switch will be attached to all hosts in the clusters defined
+      - compute
+    uplink_quantity: 1
+    vmnics:
+      - vmnic1
+    distributed_port_groups:
+      - port_group_name: workload-pg
+        vlan_id: "{{ opinionated.hosting_network.workload.vlan_id |default(0) }}"
