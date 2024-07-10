@@ -34,7 +34,7 @@ opinionated:
       cidr: "172.20.16.0/22"
       gateway: "172.20.16.1"
       # A NSX-T deployment requires 4 IPs, plus 1 per esxi host. They MUST be contiguous.
-      starting_addr: "172.20.16.100"
+      starting_addr: "172.20.16.10"
     # nsxt tep pool will not be routed, but should not clash with routeable ranges
     nsxt_tep:
       port_group: nsxt-tep
