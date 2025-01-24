@@ -54,13 +54,13 @@ opinionated:
     memory_in_mb: 4096
     cpus: 2
     disk_size_in_gb: 100
-    # buckets are not created with versioning enabled. If that is a requirement, then you need to configure it manually afterwards
-    # Platform Automation Toolkit recommends enabling versioning: https://docs.vmware.com/en/Platform-Automation-Toolkit-for-VMware-Tanzu/5.2/vmware-automation-toolkit/GUID-docs-how-to-guides-setting-up-s3.html#object-versions
     buckets:
       - name: products
         policy: read-write
+        versioning: enabled
       - name: foundation-state
         policy: read-write
+        versioning: enabled
 
 #####################################################################
 ### No need to edit below this line for an opinionated deployment ###
